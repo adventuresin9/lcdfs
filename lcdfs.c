@@ -86,6 +86,8 @@ Devfile files[] = {
 	{ "ctl", readctl, writectl, 0664 },
 	{ "row1", nil, writechar, 0220 },
 	{ "row2", nil, writechar, 0220 },
+	{ "row3", nil, writechar, 0220 },
+	{ "row4", nil, writechar, 0220 },
 };
 
 
@@ -125,7 +127,7 @@ File *root;
 File *devdir;
 LCDdev lcd;
 int i²cfd;
-
+int	rows, cols;
 
 static void
 ropen(Req *r)
@@ -260,7 +262,13 @@ lcdclear(void)
 static void
 lcdhome(void)
 {
-	lcdcmd(LCD_SETDDRAMADDR | (lcd.row * 0x40));
+// row0 0x00
+// row1 0x40
+// row2 0x14
+// row3 0x54
+	u8int rowval[] = {0x00, 0x40, 0x14, 0x54};
+
+	lcdcmd(LCD_SETDDRAMADDR | (rowval[lcd.row]));
 }
 
 
@@ -322,14 +330,21 @@ writechar(Req *r)
 		return nil;
 	}
 
-/* just doing 16 chars per line */
-	if(len > 16)
-		len = 16;
+/* only bother printing chars of ammount cols (columns) */
+	if(len > cols)
+		len = cols;
 
-	if(!strcmp(this, row2))
-		lcd.row = 1;
-	else
+	if(!strcmp(this, "row1"))
 		lcd.row = 0;
+
+	if(!strcmp(this, "row2"))
+		lcd.row = 1;
+
+	if(!strcmp(this, "row3"))
+		lcd.row = 2;
+
+	if(!strcmp(this, "row4"))
+		lcd.row = 3;
 
 	lcdhome();
 
@@ -413,8 +428,9 @@ writectl(Req *r)
 static void
 initfs(char *dirname)
 {
-	char* user;
+	char *user;
 	int i;
+	char *rowname;
 
 	user = getuser();
 	s.tree = alloctree(user, user, 0555, nil);
@@ -423,7 +439,7 @@ initfs(char *dirname)
 	root = s.tree->root;
 	if((devdir = createfile(root, dirname, user, DMDIR|0555, nil)) == nil)
 		sysfatal("initfs: createfile: %s: %r", dirname);
-	for(i = 0; i < nelem(files); i++)
+	for(i = 0; i < (rows + 1); i++)
 		if(createfile(devdir, files[i].name, user, files[i].mode, files + i) == nil)
 			sysfatal("initfs: createfile: %s: %r", files[i].name);
 }
@@ -436,11 +452,13 @@ threadmain(int argc, char *argv[])
 
 	srvname = "lcdfs";
 	mntpt = "/mnt";
-	i²cfile = "/dev/i2c/i2c.27.data";
+	rows = 2;
+	cols = 16;
+	i²cfile = "/dev/i2c1/i2c.27.data";
 
 	ARGBEGIN {
 	default:
-		fprint(2, "usage: %s [-m mntpt] [-s srvname] [-d devfile]\n", argv0);
+		fprint(2, "usage: %s [-r rows] [-c columns] [-m mntpt] [-s srvname] [-d devfile]\n", argv0);
 		exits("usage");
 	case 's':
 		srvname = ARGF();
@@ -451,7 +469,28 @@ threadmain(int argc, char *argv[])
 	case 'd':
 		i²cfile = ARGF();
 		break;
+	case 'r':
+		rows = strtol(ARGF(), nil, 0);
+		break;
+	case 'c':
+		cols = strtol(ARGF(), nil, 0);
+		break;
 	} ARGEND
+
+	/*
+	 *	do some checks on rows and cols input,
+	 *	assumeing these things tops out at
+	 *	4 rows, and stopping at 40 cols because
+	 *	that is where they are set to print on 
+	 *	the next row
+	 */
+
+	if(rows < 1)
+		rows = 1;
+	if(rows > 4)
+		rows = 4;
+	if(cols > 40)
+		cols = 40;
 
 
 	if((i²cfd = open(i²cfile, ORDWR)) < 0)
