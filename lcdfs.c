@@ -348,7 +348,7 @@ writechar(Req *r)
 
 	lcdhome();
 
-	for(i = 0; i < 16; i++){
+	for(i = 0; i < len; i++){
 		if(i < len)
 			val = (u8int)r->ifcall.data[i];
 		if((val < 0x20) || (val > 0x7E) || (i >= len))		/* do space for all other characters */
